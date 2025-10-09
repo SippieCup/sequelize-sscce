@@ -4,9 +4,11 @@ import {
   InferAttributes,
   InferCreationAttributes,
   Model,
+  Options,
 } from "@sequelize/core";
 import { createSequelize7Instance } from "../dev/create-sequelize-instance";
 import { expect } from "chai";
+import { PostgresDialect } from "@sequelize/postgres";
 
 // if your issue is dialect specific, remove the dialects you don't need to test on.
 export const testingOnDialects = new Set(["postgres"]);
@@ -74,7 +76,7 @@ export async function run() {
       // Keep model definitions lean so the regression focus stays on include resolution.
       timestamps: false,
     },
-  });
+  } as Options<PostgresDialect>);
 
   Location.init(
     {
