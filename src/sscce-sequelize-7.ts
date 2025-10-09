@@ -4,11 +4,24 @@ import {
   InferAttributes,
   InferCreationAttributes,
   Model,
+  NonAttribute,
   Options,
 } from "@sequelize/core";
 import { createSequelize7Instance } from "../dev/create-sequelize-instance";
 import { expect } from "chai";
 import { PostgresDialect } from "@sequelize/postgres";
+import {
+  Attribute,
+  AutoIncrement,
+  BelongsToMany,
+  ColumnName,
+  Default,
+  DeletedAt,
+  HasMany,
+  Index,
+  NotNull,
+  PrimaryKey,
+} from "@sequelize/core/decorators-legacy";
 
 // if your issue is dialect specific, remove the dialects you don't need to test on.
 export const testingOnDialects = new Set(["postgres"]);
@@ -17,32 +30,70 @@ class Location extends Model<
   InferAttributes<Location>,
   InferCreationAttributes<Location>
 > {
+  @Attribute(DataTypes.INTEGER)
+  @AutoIncrement
+  @PrimaryKey
   declare id: CreationOptional<number>;
-  declare name: string;
 
-  declare customers?: Customer[];
-  declare systems?: System[];
+  @Attribute(DataTypes.TEXT)
+  declare name?: string;
+
+  @HasMany(() => System, {
+    foreignKey: "locationId",
+    inverse: "location",
+  })
+  declare systems?: NonAttribute<System[]>;
+
+  @BelongsToMany(() => Customer, {
+    through: {
+      model: () => CustomerLocation,
+      // Only "active" relationships
+      scope: { endAt: null },
+    },
+    foreignKey: "locationId",
+    otherKey: "customerId",
+    inverse: {
+      as: "locations",
+    },
+  })
+  declare customers?: NonAttribute<Customer[]>;
 }
 
 class Customer extends Model<
   InferAttributes<Customer>,
   InferCreationAttributes<Customer>
 > {
+  @Attribute(DataTypes.INTEGER)
+  @AutoIncrement
+  @PrimaryKey
   declare id: CreationOptional<number>;
-  declare name: string;
 
-  declare locations?: Location[];
+  @Attribute(DataTypes.TEXT)
+  declare name?: CreationOptional<string | null>;
+
+  declare locations?: NonAttribute<Location[]>;
+  declare CustomerLocation?: NonAttribute<CustomerLocation>;
 }
 
 class System extends Model<
   InferAttributes<System>,
   InferCreationAttributes<System>
 > {
+  @Attribute(DataTypes.INTEGER)
+  @AutoIncrement
+  @PrimaryKey
   declare id: CreationOptional<number>;
-  declare name: string;
-  declare locationId: number;
 
+  @Attribute(DataTypes.TEXT)
+  declare name: string;
+
+  declare locationId: number;
   declare location?: Location;
+
+  @HasMany(() => FuelDelivery, {
+    foreignKey: "systemId",
+    inverse: "system",
+  })
   declare fuelDeliveries?: FuelDelivery[];
 }
 
@@ -50,19 +101,44 @@ class FuelDelivery extends Model<
   InferAttributes<FuelDelivery>,
   InferCreationAttributes<FuelDelivery>
 > {
+  @Attribute(DataTypes.INTEGER)
+  @AutoIncrement
+  @PrimaryKey
   declare id: CreationOptional<number>;
+
+  @Attribute(DataTypes.TEXT)
   declare product: string;
+
+  @Attribute(DataTypes.INTEGER)
   declare systemId: number;
 
   declare system?: System;
 }
 
-class LocationCustomer extends Model<
-  InferAttributes<LocationCustomer>,
-  InferCreationAttributes<LocationCustomer>
+class CustomerLocation extends Model<
+  InferAttributes<CustomerLocation>,
+  InferCreationAttributes<CustomerLocation>
 > {
-  declare locationId: number;
+  @Attribute(DataTypes.INTEGER)
+  @PrimaryKey
+  @NotNull
   declare customerId: number;
+
+  @Attribute(DataTypes.INTEGER)
+  @PrimaryKey
+  @NotNull
+  declare locationId: number;
+
+  @Attribute(DataTypes.TEXT)
+  declare relationType: string;
+
+  @Attribute(DataTypes.DATE(6))
+  @Index()
+  declare endAt?: Date | null;
+
+  declare customer?: Customer;
+
+  declare location?: Location;
 }
 
 // Your SSCCE goes inside this function.
@@ -76,137 +152,18 @@ export async function run() {
       // Keep model definitions lean so the regression focus stays on include resolution.
       timestamps: false,
     },
+    models: [Customer, Location, System, FuelDelivery, CustomerLocation],
   } as Options<PostgresDialect>);
-
-  Location.init(
-    {
-      id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-      },
-      name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-      },
-    },
-    {
-      sequelize,
-      tableName: "locations",
-    }
-  );
-
-  Customer.init(
-    {
-      id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-      },
-      name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-      },
-    },
-    {
-      sequelize,
-      tableName: "customers",
-    }
-  );
-
-  System.init(
-    {
-      id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-      },
-      name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-      },
-      locationId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-      },
-    },
-    {
-      sequelize,
-      tableName: "systems",
-    }
-  );
-
-  FuelDelivery.init(
-    {
-      id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-      },
-      product: {
-        type: DataTypes.STRING,
-        allowNull: false,
-      },
-      systemId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-      },
-    },
-    {
-      sequelize,
-      tableName: "fuel_deliveries",
-    }
-  );
-
-  LocationCustomer.init(
-    {
-      locationId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        primaryKey: true,
-      },
-      customerId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        primaryKey: true,
-      },
-    },
-    {
-      sequelize,
-      tableName: "location_customers",
-    }
-  );
-
-  FuelDelivery.belongsTo(System, { as: "system", foreignKey: "systemId" });
-  System.hasMany(FuelDelivery, {
-    as: "fuelDeliveries",
-    foreignKey: "systemId",
-  });
-
-  System.belongsTo(Location, { as: "location", foreignKey: "locationId" });
-  Location.hasMany(System, { as: "systems", foreignKey: "locationId" });
-
-  Location.belongsToMany(Customer, {
-    as: "customers",
-    through: LocationCustomer,
-    foreignKey: "locationId",
-    otherKey: "customerId",
-  });
-  Customer.belongsToMany(Location, {
-    as: "locations",
-    through: LocationCustomer,
-    foreignKey: "customerId",
-    otherKey: "locationId",
-  });
 
   try {
     await sequelize.sync({ force: true });
 
     const customer = await Customer.create({ name: "Propane Co-op" });
     const location = await Location.create({ name: "Rural Depot" });
-    await LocationCustomer.create({
+    await CustomerLocation.create({
       customerId: customer.id,
       locationId: location.id,
+      relationType: "primary",
     });
 
     const system = await System.create({
@@ -247,6 +204,79 @@ export async function run() {
     expect(customers).to.not.be.undefined;
     expect(customers).to.have.length(1);
     expect(customers![0].id).to.equal(customer.id);
+
+    // Test Two
+
+    const result2 = await Customer.findOne({
+      include: [
+        {
+          association: "locations",
+
+          include: [
+            {
+              association: "customers",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result2).to.not.be.null;
+    expect(result2!.locations).to.not.be.undefined;
+    const locations = result2!.locations!;
+    expect(locations).to.have.length.greaterThan(0);
+    expect(locations[0].customers).to.not.be.undefined;
+    expect(locations[0].customers).to.have.length.greaterThan(0);
+
+    /// Test Three
+
+    const result3 = await FuelDelivery.findByPk(delivery.id, {
+      include: [
+        {
+          association: "system",
+          include: [
+            {
+              association: "location",
+              include: [
+                {
+                  association: "customers",
+                  required: true,
+                  include: [
+                    {
+                      association: "locations",
+                      required: false,
+                      include: [
+                        {
+                          association: "systems",
+                          where: { name: "Delivery System Alpha" },
+                          required: false,
+                          include: [],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result3).to.not.be.null;
+    expect(result3!.system).to.not.be.undefined;
+    expect(result3!.system!.location).to.not.be.undefined;
+    const customers3 = result3!.system!.location!.customers;
+    expect(customers3).to.not.be.undefined;
+    expect(customers3).to.have.length(1);
+    expect(customers3![0].id).to.equal(customer.id);
+    expect(customers3![0].locations).to.not.be.undefined;
+    expect(customers3![0].locations).to.have.length.greaterThan(0);
+    expect(customers3![0].locations![0].systems).to.not.be.undefined;
+    expect(customers3![0].locations![0].systems).to.have.length.greaterThan(0);
+    expect(customers3![0].locations![0].systems![0].name).to.equal(
+      "Delivery System Alpha"
+    );
   } finally {
     await sequelize.close();
   }
