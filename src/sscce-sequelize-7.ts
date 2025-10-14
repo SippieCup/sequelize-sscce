@@ -14,9 +14,6 @@ import {
   Attribute,
   AutoIncrement,
   BelongsToMany,
-  ColumnName,
-  Default,
-  DeletedAt,
   HasMany,
   Index,
   NotNull,
@@ -87,6 +84,7 @@ class System extends Model<
   @Attribute(DataTypes.TEXT)
   declare name: string;
 
+  @Attribute(DataTypes.INTEGER)
   declare locationId: number;
   declare location?: Location;
 
@@ -158,18 +156,27 @@ export async function run() {
   try {
     await sequelize.sync({ force: true });
 
-    const customer = await Customer.create({ name: "Propane Co-op" });
-    const location = await Location.create({ name: "Rural Depot" });
+    const customer = await Customer.create({ name: "Propane Delivery Co" });
+    const customer2 = await Customer.create({ name: "Kozy Operations Inc" });
+    const location = await Location.create({ name: "Fuel Depot" });
     await CustomerLocation.create({
       customerId: customer.id,
       locationId: location.id,
       relationType: "primary",
     });
 
+    await CustomerLocation.create({
+      customerId: customer2.id,
+      locationId: location.id,
+      relationType: "secondary",
+    });
+
     const system = await System.create({
-      name: "Delivery System Alpha",
+      name: "Kozy Operations Inc",
       locationId: location.id,
     });
+
+    console.log(system);
     const delivery = await FuelDelivery.create({
       product: "Propane",
       systemId: system.id,
@@ -202,8 +209,9 @@ export async function run() {
     expect(result!.system!.location).to.not.be.undefined;
     const customers = result!.system!.location!.customers;
     expect(customers).to.not.be.undefined;
-    expect(customers).to.have.length(1);
+    expect(customers).to.have.length(2);
     expect(customers![0].id).to.equal(customer.id);
+    expect(customers![1].id).to.equal(customer2.id);
 
     // Test Two
 
@@ -228,8 +236,6 @@ export async function run() {
     expect(locations[0].customers).to.not.be.undefined;
     expect(locations[0].customers).to.have.length.greaterThan(0);
 
-    /// Test Three
-
     const result3 = await FuelDelivery.findByPk(delivery.id, {
       include: [
         {
@@ -248,9 +254,34 @@ export async function run() {
                       include: [
                         {
                           association: "systems",
-                          where: { name: "Delivery System Alpha" },
-                          required: false,
-                          include: [],
+                          where: { name: "Kozy Operations Inc" },
+                          required: true,
+                          include: [
+                            {
+                              association: "location",
+                              include: [
+                                {
+                                  association: "customers",
+                                  required: false,
+                                  include: [
+                                    {
+                                      association: "locations",
+                                      required: false,
+                                      include: [
+                                        {
+                                          association: "systems",
+                                          where: {
+                                            name: "Kozy Operations Inc",
+                                          },
+                                          required: false,
+                                        },
+                                      ],
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
                         },
                       ],
                     },
@@ -266,16 +297,91 @@ export async function run() {
     expect(result3).to.not.be.null;
     expect(result3!.system).to.not.be.undefined;
     expect(result3!.system!.location).to.not.be.undefined;
+
     const customers3 = result3!.system!.location!.customers;
     expect(customers3).to.not.be.undefined;
-    expect(customers3).to.have.length(1);
+    expect(customers3).to.have.length(2);
     expect(customers3![0].id).to.equal(customer.id);
     expect(customers3![0].locations).to.not.be.undefined;
     expect(customers3![0].locations).to.have.length.greaterThan(0);
     expect(customers3![0].locations![0].systems).to.not.be.undefined;
     expect(customers3![0].locations![0].systems).to.have.length.greaterThan(0);
     expect(customers3![0].locations![0].systems![0].name).to.equal(
-      "Delivery System Alpha"
+      "Kozy Operations Inc"
+    );
+
+    const result4 = await FuelDelivery.findByPk(delivery.id, {
+      include: [
+        {
+          association: "system",
+          include: [
+            {
+              association: "location",
+              include: [
+                {
+                  association: "customers",
+                  required: true,
+                  include: [
+                    {
+                      association: "locations",
+                      required: false,
+                      include: [
+                        {
+                          association: "systems",
+                          where: { name: "Kozy Operations Inc" },
+                          required: true,
+                          include: [
+                            {
+                              association: "location",
+                              include: [
+                                {
+                                  association: "customers",
+                                  required: false,
+                                  include: [
+                                    {
+                                      association: "locations",
+                                      required: true,
+                                      include: [
+                                        {
+                                          association: "systems",
+                                          where: {
+                                            name: "Kozy Operations Inc",
+                                          },
+                                          required: false,
+                                        },
+                                      ],
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result4).to.not.be.null;
+    expect(result4!.system).to.not.be.undefined;
+    expect(result4!.system!.location).to.not.be.undefined;
+
+    const customers4 = result4!.system!.location!.customers;
+    expect(customers4).to.not.be.undefined;
+    expect(customers4).to.have.length(2);
+    expect(customers4![0].id).to.equal(customer.id);
+    expect(customers4![0].locations).to.not.be.undefined;
+    expect(customers4![0].locations).to.have.length.greaterThan(0);
+    expect(customers4![0].locations![0].systems).to.not.be.undefined;
+    expect(customers4![0].locations![0].systems).to.have.length.greaterThan(0);
+    expect(customers4![0].locations![0].systems![0].name).to.equal(
+      "Kozy Operations Inc"
     );
   } finally {
     await sequelize.close();
